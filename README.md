@@ -13,8 +13,14 @@ Depuis le dossier du projet, installe les dépendances puis lance `main.py` :
 ```
 
 Le dossier `models/vosk_fr` contient le modèle de reconnaissance vocale local.
-Clique sur **Parler** pour activer le micro ; Boogie n'écoute pas en permanence.
-Clique à nouveau pour couper l'écoute. Tu peux aussi lui écrire directement.
+Le micro s'active automatiquement au démarrage et reste à l'écoute du wake word
+**« Boogie »** tant que l'application est ouverte. Dis « Boogie », puis ta
+demande ; si tu prononces seulement le wake word, Boogie attend ta demande
+pendant 10 secondes. Tu peux aussi lui écrire directement.
+
+La synthèse vocale choisit une voix féminine française installée dans Windows
+(sur ce PC, Microsoft Hortense Desktop - French). Tu peux définir `voice_name`
+dans `boogie_config.json` pour sélectionner une autre voix féminine installée.
 
 ## Réponses IA locales
 

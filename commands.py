@@ -81,7 +81,7 @@ class AssistantEngine:
             raise ValueError("boogie_config.json doit contenir un objet JSON.")
         return config
 
-    def process(self, prompt, status_callback=lambda _status: None):
+    def process(self, prompt, status_callback=None):
         normalized = _normalize(prompt)
 
         spotify_action = (
@@ -97,7 +97,8 @@ class AssistantEngine:
         if normalized.startswith(("recherche ", "cherche sur google ", "fais une recherche")):
             return self._google_search(prompt)
 
-        status_callback("Je cherche des informations sur le Web…")
+        if status_callback is not None:
+            status_callback("Je cherche des informations sur le Web…")
         results = self._search_web(prompt)
         if results:
             return self._answer_with_local_model(prompt, results)
@@ -265,16 +266,46 @@ class AssistantEngine:
 
             speaker = pyttsx3.init()
             speaker.setProperty("rate", 175)
-            french_voice = next(
-                (
-                    voice
-                    for voice in speaker.getProperty("voices")
-                    if "fr" in _normalize(f"{voice.id} {voice.name}")
-                ),
-                None,
-            )
-            if french_voice:
-                speaker.setProperty("voice", french_voice.id)
+            voices = speaker.getProperty("voices")
+            female_voices = [
+                voice
+                for voice in voices
+                if str(getattr(voice, "gender", "")).casefold() == "female"
+            ]
+            configured_name = self.config.get("voice_name", "").strip()
+            if configured_name:
+                selected_voice = next(
+                    (
+                        voice
+                        for voice in female_voices
+                        if _normalize(configured_name)
+                        in _normalize(f"{voice.id} {voice.name}")
+                    ),
+                    None,
+                )
+                if selected_voice is None:
+                    raise RuntimeError(
+                        f"La voix féminine configurée « {configured_name} » "
+                        "n’est pas installée."
+                    )
+            else:
+                selected_voice = next(
+                    (
+                        voice
+                        for voice in female_voices
+                        if "fr" in _normalize(
+                            " ".join(str(language) for language in voice.languages)
+                        )
+                    ),
+                    None,
+                )
+                if selected_voice is None and female_voices:
+                    selected_voice = female_voices[0]
+            if selected_voice is None:
+                raise RuntimeError(
+                    "Aucune voix féminine n’est installée dans Windows."
+                )
+            speaker.setProperty("voice", selected_voice.id)
             speaker.say(text)
             speaker.runAndWait()
             speaker.stop()

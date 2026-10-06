@@ -16,7 +16,6 @@ from PyQt5.QtWidgets import (
 
 class BoogieInterface(QWidget):
     send_requested = pyqtSignal(str)
-    listen_requested = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -134,9 +133,9 @@ class BoogieInterface(QWidget):
         self.input.setPlaceholderText("Écris à Boogie…")
         self.input.returnPressed.connect(self._send_text)
         composer.addWidget(self.input, 1)
-        self.mic_button = QPushButton("🎙  Parler")
-        self.mic_button.setMinimumWidth(125)
-        self.mic_button.clicked.connect(self.listen_requested.emit)
+        self.mic_button = QPushButton("🎙  Démarrage…")
+        self.mic_button.setMinimumWidth(170)
+        self.mic_button.setDisabled(True)
         composer.addWidget(self.mic_button)
         self.send_button = QPushButton("Envoyer")
         self.send_button.setMinimumWidth(96)
@@ -188,7 +187,10 @@ class BoogieInterface(QWidget):
         )
 
     def set_listening(self, listening):
-        self.mic_button.setText("■  Arrêter" if listening else "🎙  Parler")
+        self.mic_button.setText(
+            "🎙  Toujours à l’écoute" if listening else "🎙  Micro inactif"
+        )
+        self.mic_button.setDisabled(True)
         if listening:
             self.pulse.show()
             self.pulse_animation.start()
@@ -201,7 +203,6 @@ class BoogieInterface(QWidget):
     def set_busy(self, busy):
         self.send_button.setDisabled(busy)
         self.input.setDisabled(busy)
-        self.mic_button.setDisabled(busy)
 
     def _scale_background(self):
         self.background.setGeometry(self.rect())
