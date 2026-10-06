@@ -1,5 +1,9 @@
 {
   "ollama_url": "http://127.0.0.1:11434",
   "ollama_model": "llama3.2",
-  "web_search_url": "https://html.duckduckgo.com/html/?q={query}"
+  "web_search_url": "https://www.bing.com/search?format=rss&mkt=fr-FR&q={query}",
+  "voice_rate": 145,
+  "neural_voice": "fr-FR-DeniseNeural",
+  "neural_rate": "+0%",
+  "neural_pitch": "-2Hz"
 }
