@@ -2,8 +2,10 @@
   "ollama_url": "http://127.0.0.1:11434",
   "ollama_model": "llama3.2",
   "web_search_url": "https://www.bing.com/search?format=rss&mkt=fr-FR&q={query}",
-  "voice_rate": 145,
+  "voice_rate": 180,
+  "voice_volume": 1.0,
   "neural_voice": "fr-FR-DeniseNeural",
-  "neural_rate": "+0%",
-  "neural_pitch": "-2Hz"
+  "neural_rate": "+12%",
+  "neural_pitch": "+2Hz",
+  "neural_volume": "+12%"
 }

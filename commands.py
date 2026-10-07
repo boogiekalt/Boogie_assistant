@@ -697,8 +697,9 @@ class AssistantEngine:
         import edge_tts
 
         voice = self.config.get("neural_voice", "fr-FR-DeniseNeural")
-        rate = self.config.get("neural_rate", "+0%")
-        pitch = self.config.get("neural_pitch", "-2Hz")
+        rate = self.config.get("neural_rate", "+12%")
+        pitch = self.config.get("neural_pitch", "+2Hz")
+        volume = self.config.get("neural_volume", "+12%")
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as audio_file:
             audio_path = Path(audio_file.name)
         try:
@@ -708,7 +709,7 @@ class AssistantEngine:
                     voice=voice,
                     rate=rate,
                     pitch=pitch,
-                    volume="+0%",
+                    volume=volume,
                 ).save(str(audio_path))
             )
             self._play_mp3(audio_path)
@@ -768,8 +769,8 @@ class AssistantEngine:
 
         speaker = pyttsx3.init()
         try:
-            speaker.setProperty("rate", self.config.get("voice_rate", 145))
-            speaker.setProperty("volume", 0.88)
+            speaker.setProperty("rate", self.config.get("voice_rate", 180))
+            speaker.setProperty("volume", self.config.get("voice_volume", 1.0))
             voices = speaker.getProperty("voices")
             female_voices = [
                 voice
