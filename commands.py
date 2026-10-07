@@ -26,6 +26,40 @@ def _normalize(text):
     return "".join(char for char in decomposed if not unicodedata.combining(char))
 
 
+def _clean_recognized_text(text):
+    if text is None:
+        return ""
+    cleaned = _normalize(text)
+    cleaned = re.sub(r"https?://\S+", " ", cleaned)
+    cleaned = re.sub(r"[^a-z0-9\s'-]", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+    for wrong, right in {
+        "cuisine": "squeezie",
+        "cuisines": "squeezie",
+        "cuizine": "squeezie",
+        "squeezi": "squeezie",
+        "squeezie sur youtube": "squeezie",
+        "squeezie youtube": "squeezie",
+    }.items():
+        cleaned = re.sub(rf"\b{re.escape(wrong)}\b", right, cleaned)
+
+    cleaned = re.sub(
+        r"\b(epstein)(?:\s+(?:en|et|putain|ptn|heu|hein|euh|bon|donc|alors|genre|bah))*\b",
+        r"\1",
+        cleaned,
+    )
+    cleaned = re.sub(
+        r"\b(?:euh|heu|hein|bon|donc|alors|genre|bah|voila|voile|en|et|putain|ptn|ca|c est|cest)\b",
+        " ",
+        cleaned,
+    )
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,.!?;:-")
+    if not cleaned:
+        return ""
+    return cleaned
+
+
 class _PlainText(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -53,6 +87,7 @@ class AssistantEngine:
         self.project_dir = Path(project_dir)
         self.config = self._load_config()
         self._pending_weather_prompt = None
+        self._speech_stop_event = threading.Event()
 
     def _load_config(self):
         config_path = self.project_dir / "boogie_config.json"
@@ -97,6 +132,10 @@ class AssistantEngine:
         )
         if spotify_action:
             return self._open_spotify(prompt)
+        if self._is_youtube_request(normalized):
+            return self._open_youtube(prompt)
+        if self._is_close_request(normalized):
+            return self._close_app(prompt)
         if any(term in normalized for term in ("nouvel onglet", "ouvre chrome", "ouvre google")):
             return self._open_chrome(prompt)
         if normalized.startswith(("recherche ", "cherche sur google ", "fais une recherche")):
@@ -115,6 +154,10 @@ class AssistantEngine:
                 "Je n’ai trouvé aucun résultat Web et Ollama n’est pas disponible. "
                 "Vérifie ta connexion Internet ou lance Ollama en local."
             ) from exc
+
+    @staticmethod
+    def _clean_recognized_text(text):
+        return _clean_recognized_text(text)
 
     @staticmethod
     def _is_time_question(normalized):
@@ -294,6 +337,54 @@ class AssistantEngine:
         }
         return descriptions.get(code, "conditions météo variables")
 
+    @staticmethod
+    def _is_youtube_request(normalized):
+        if "youtube" in normalized or "yt" in normalized:
+            return True
+        return (
+            "video" in normalized or "videos" in normalized
+        ) and any(
+            verb in normalized
+            for verb in (
+                "lance ", "ouvre ", "joue ", "mets ", "cherche ", "recherche ",
+                "ecoute ", "écoute ", "regarde ", "regarder ", "play "
+            )
+        )
+
+    @staticmethod
+    def _is_close_request(normalized):
+        if "ferme" not in normalized and "fermer" not in normalized and "close" not in normalized:
+            return False
+        return any(term in normalized for term in ("edge", "browser", "chrome", "google chrome", "microsoft edge"))
+
+    def _close_app(self, prompt):
+        normalized = _normalize(prompt)
+        if "edge" in normalized or "microsoft edge" in normalized:
+            app_name = "Microsoft Edge"
+            exe_names = ("msedge.exe", "microsoftedge.exe")
+        elif "chrome" in normalized or "google chrome" in normalized:
+            app_name = "Google Chrome"
+            exe_names = ("chrome.exe",)
+        else:
+            app_name = "le navigateur"
+            exe_names = ("msedge.exe", "microsoftedge.exe", "chrome.exe")
+
+        found = False
+        for exe_name in exe_names:
+            result = subprocess.run(
+                ["taskkill", "/F", "/IM", exe_name],
+                capture_output=True,
+                text=True,
+                shell=True,
+            )
+            if result.returncode in (0, 128):
+                found = True
+
+        if not found:
+            raise RuntimeError(f"Je n’ai pas trouvé {app_name} ouvert pour le fermer.")
+        display_name = "Edge" if app_name == "Microsoft Edge" else app_name
+        return f"C’est fait : j’ai fermé {display_name}."
+
     def _open_chrome(self, prompt):
         chrome_path = shutil.which("chrome")
         if not chrome_path and os.name == "nt":
@@ -327,6 +418,20 @@ class AssistantEngine:
             url += "/search?q=" + urllib.parse.quote_plus(match.group(1))
         subprocess.Popen([chrome_path, "--new-tab", url])
         return "C’est fait : j’ai ouvert un nouvel onglet dans Chrome."
+
+    def _open_youtube(self, prompt):
+        cleaned = prompt.strip()
+        cleaned = re.sub(r"^(?:lance|ouvre|joue|mets|cherche|recherche|ecoute|écoute|regarde|play)\s+", "", cleaned, flags=re.I)
+        cleaned = re.sub(r"^(?:une\s+)?(?:vid[ée]o|video)\s+(?:de|du|d')?\s*", "", cleaned, flags=re.I)
+        cleaned = re.sub(r"\s+sur\s+(?:youtube|yt)\s*$", "", cleaned, flags=re.I)
+        cleaned = cleaned.strip(" .!?")
+        if not cleaned:
+            raise RuntimeError("Je n’ai pas pu identifier la vidéo demandée.")
+
+        url = "https://www.youtube.com/results?search_query=" + urllib.parse.quote_plus(cleaned)
+        if not webbrowser.open_new_tab(url):
+            raise RuntimeError("Je n’ai pas pu ouvrir YouTube.")
+        return f"J’ai ouvert YouTube pour chercher « {cleaned} » dans les résultats de recherche."
 
     def _open_spotify(self, prompt):
         normalized = _normalize(prompt)
@@ -562,7 +667,11 @@ class AssistantEngine:
             raise ValueError("Ollama a renvoyé une réponse vide.")
         return answer
 
+    def request_stop(self):
+        self._speech_stop_event.set()
+
     def speak(self, text):
+        self._speech_stop_event.clear()
         speech_text = re.sub(r"https?://\S+", "", text)
         speech_text = re.sub(r"(?i)\bsource\s*:\s*", "", speech_text)
         neural_error = None
@@ -606,8 +715,7 @@ class AssistantEngine:
         finally:
             audio_path.unlink(missing_ok=True)
 
-    @staticmethod
-    def _play_mp3(audio_path):
+    def _play_mp3(self, audio_path):
         try:
             winmm = ctypes.WinDLL("winmm")
         except AttributeError as exc:
@@ -638,7 +746,19 @@ class AssistantEngine:
         try:
             send(f'open "{audio_path}" type mpegvideo alias {alias}')
             opened = True
-            send(f"play {alias} wait")
+
+            def play_audio():
+                send(f"play {alias} wait")
+
+            player = threading.Thread(target=play_audio, daemon=True)
+            player.start()
+            while player.is_alive():
+                if self._speech_stop_event.is_set():
+                    send(f"stop {alias}")
+                    send(f"close {alias}")
+                    opened = False
+                    return
+                time.sleep(0.05)
         finally:
             if opened:
                 send(f"close {alias}")
@@ -691,6 +811,16 @@ class AssistantEngine:
                 )
             speaker.setProperty("voice", selected_voice.id)
             speaker.say(text)
-            speaker.runAndWait()
+
+            def run_speech():
+                speaker.runAndWait()
+
+            worker = threading.Thread(target=run_speech, daemon=True)
+            worker.start()
+            while worker.is_alive():
+                if self._speech_stop_event.is_set():
+                    speaker.stop()
+                    return
+                time.sleep(0.05)
         finally:
             speaker.stop()

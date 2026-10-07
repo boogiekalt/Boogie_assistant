@@ -4,6 +4,7 @@ from pathlib import Path
 from PyQt5.QtCore import Qt, QPropertyAnimation, pyqtSignal
 from PyQt5.QtGui import QPixmap, QTextCursor
 from PyQt5.QtWidgets import (
+    QFrame,
     QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
@@ -21,25 +22,51 @@ class BoogieInterface(QWidget):
         super().__init__()
 
         self.setWindowTitle("Boogie — Assistant personnel")
-        self.resize(920, 820)
-        self.setMinimumSize(680, 620)
+        self.resize(1100, 820)
+        self.setMinimumSize(780, 620)
         self.setStyleSheet(
             """
-            QWidget { color: #eaf7ff; font-family: "Segoe UI"; }
-            QPushButton {
-                background: #102847; border: 1px solid #176b9b; border-radius: 10px;
-                padding: 10px 14px; color: #eaf7ff; font-weight: 600;
+            QWidget {
+                color: #edfaff;
+                font-family: "Segoe UI";
+                background: transparent;
             }
-            QPushButton:hover { background: #173c60; border-color: #00c9ff; }
-            QPushButton:disabled { color: #71859a; border-color: #304255; }
+            QMainWindow, QWidget { background: transparent; }
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #ff2e57, stop:1 #d60035);
+                border: 1px solid rgba(255,255,255,0.25);
+                border-radius: 12px;
+                padding: 10px 14px;
+                color: #fff9ff;
+                font-weight: 800;
+                letter-spacing: 0.5px;
+                box-shadow: 0 0 12px rgba(255, 60, 96, 0.45);
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #ff4a73, stop:1 #eb133d);
+            }
+            QPushButton:disabled {
+                color: #c9d6ea;
+                background: rgba(115, 122, 135, 0.3);
+                border: 1px solid rgba(255,255,255,0.08);
+            }
             QLineEdit {
-                background: rgba(4, 15, 31, 225); border: 1px solid #237db0;
-                border-radius: 12px; padding: 13px; selection-background-color: #00a8e8;
+                background: rgba(6, 14, 25, 0.8);
+                border: 1px solid rgba(90, 180, 255, 0.85);
+                border-radius: 14px;
+                padding: 13px 16px;
+                color: #eefaff;
+                selection-background-color: #61d8ff;
+                box-shadow: inset 0 0 18px rgba(67, 140, 255, 0.2);
             }
             QTextBrowser {
-                background: rgba(3, 12, 27, 205); border: 1px solid rgba(38, 120, 168, 150);
-                border-radius: 14px; padding: 14px;
+                background: rgba(5, 12, 22, 0.78);
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 18px;
+                padding: 16px;
+                color: #edfaff;
             }
+            QLabel { color: #edfaff; }
             """
         )
 
@@ -50,29 +77,61 @@ class BoogieInterface(QWidget):
         self._scale_background()
         self.background.lower()
         self.background_effect = QGraphicsOpacityEffect(self.background)
-        self.background_effect.setOpacity(0.3)
+        self.background_effect.setOpacity(0.14)
         self.background.setGraphicsEffect(self.background_effect)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 22, 28, 22)
-        layout.setSpacing(14)
+        self.root = QWidget(self)
+        self.root.setObjectName("rootPane")
+        self.root.setStyleSheet(
+            """
+            QWidget#rootPane {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 rgba(8, 12, 18, 0.94),
+                    stop:0.35 rgba(15, 24, 36, 0.93),
+                    stop:0.7 rgba(12, 19, 31, 0.95),
+                    stop:1 rgba(8, 12, 18, 0.96));
+                border: 1px solid rgba(104, 174, 255, 0.4);
+                border-radius: 28px;
+                box-shadow: 0 0 30px rgba(42, 123, 255, 0.18), 0 0 50px rgba(255, 44, 89, 0.12);
+            }
+            """
+        )
+
+        self.root_layout = QVBoxLayout(self.root)
+        self.root_layout.setContentsMargins(22, 18, 22, 18)
+        self.root_layout.setSpacing(16)
+
+        self.hud_scan = QLabel(self.root)
+        self.hud_scan.setStyleSheet(
+            "background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 transparent, stop:0.48 rgba(83, 199, 255, 0.08), stop:0.52 rgba(83, 199, 255, 0.16), stop:1 transparent);"
+        )
+        self.hud_scan.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.hud_scan.setGeometry(0, 0, 1000, 1000)
 
         header = QHBoxLayout()
         self.logo = QLabel()
         logo = QPixmap(str(Path(__file__).resolve().parent / "assets" / "logo.png"))
         if not logo.isNull():
-            self.logo.setPixmap(logo.scaled(76, 76, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        self.logo.setFixedSize(82, 82)
+            self.logo.setPixmap(
+                logo.scaled(88, 88, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
+        self.logo.setFixedSize(90, 90)
         self.logo.setAlignment(Qt.AlignCenter)
+        self.logo.setStyleSheet(
+            "border: 1px solid rgba(255,255,255,0.18); border-radius: 20px; background: rgba(255,255,255,0.02);"
+            "box-shadow: 0 0 16px rgba(90, 180, 255, 0.22);"
+        )
         header.addWidget(self.logo)
 
         title_block = QVBoxLayout()
         title = QLabel("BOOGIE")
         title.setStyleSheet(
-            "color: #f4faff; font-size: 28px; font-weight: 800; letter-spacing: 5px;"
+            "color: #f4fbff; font-size: 31px; font-weight: 900; letter-spacing: 7px;"
         )
-        subtitle = QLabel("TON ASSISTANT PERSONNEL  ·  LOCAL & CONNECTÉ")
-        subtitle.setStyleSheet("color: #84b8d6; font-size: 10px; letter-spacing: 1px;")
+        subtitle = QLabel("ASSISTANT PERSONNEL • SYNTHÈSE VOCAL • IA / LOCAL")
+        subtitle.setStyleSheet(
+            "color: #a6d4f5; font-size: 10px; letter-spacing: 2px; text-transform: uppercase;"
+        )
         title_block.addWidget(title)
         title_block.addWidget(subtitle)
         header.addLayout(title_block)
@@ -81,74 +140,106 @@ class BoogieInterface(QWidget):
         self.status = QLabel("En attente…")
         self.status.setAlignment(Qt.AlignCenter)
         self.status.setStyleSheet(
-            "color: #70e6ff; background: rgba(2, 19, 37, 210); "
-            "border: 1px solid #176b9b; border-radius: 12px; padding: 8px 13px;"
+            "color: #8ce8ff; background: rgba(7, 22, 40, 0.9); "
+            "border: 1px solid rgba(90, 180, 255, 0.9); border-radius: 12px; "
+            "padding: 10px 18px; font-weight: 800; letter-spacing: 1px;"
+            "box-shadow: inset 0 0 14px rgba(90,180,255,0.25), 0 0 16px rgba(90,180,255,0.2);"
         )
         header.addWidget(self.status)
-        layout.addLayout(header)
-
         self.logo_effect = QGraphicsOpacityEffect()
         self.logo.setGraphicsEffect(self.logo_effect)
         self.logo_effect.setOpacity(1.0)
 
-        self.pulse = QLabel(self)
+        self.pulse = QLabel(self.root)
         pulse = QPixmap(str(Path(__file__).resolve().parent / "assets" / "pulse.png"))
-        self.pulse.setPixmap(
-            pulse.scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        )
-        self.pulse.setFixedSize(52, 52)
+        if not pulse.isNull():
+            self.pulse.setPixmap(
+                pulse.scaled(54, 54, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
+        self.pulse.setFixedSize(54, 54)
         self.pulse.setAlignment(Qt.AlignCenter)
         self.pulse.hide()
+        self.pulse.setStyleSheet(
+            "border-radius: 18px; background: rgba(255,255,255,0.02);"
+        )
         header.addWidget(self.pulse)
         self.pulse_effect = QGraphicsOpacityEffect(self.pulse)
         self.pulse.setGraphicsEffect(self.pulse_effect)
         self.pulse_animation = QPropertyAnimation(self.pulse_effect, b"opacity")
-        self.pulse_animation.setDuration(1000)
-        self.pulse_animation.setStartValue(0.35)
+        self.pulse_animation.setDuration(600)
+        self.pulse_animation.setStartValue(0.25)
         self.pulse_animation.setEndValue(1.0)
         self.pulse_animation.setLoopCount(-1)
+        self.root_layout.addLayout(header)
 
-        tagline = QLabel("Une question, une recherche ou une action sur ton PC ?")
-        tagline.setStyleSheet("color: #a8cce0; font-size: 14px; padding: 2px 4px;")
-        layout.addWidget(tagline)
+        banner = QLabel("Système d’écoute · Analyse • Recherche • Action")
+        banner.setStyleSheet(
+            "color: #dfeeff; font-size: 14px; font-weight: 700; letter-spacing: 1.4px; "
+            "padding: 2px 4px 0;"
+        )
+        self.root_layout.addWidget(banner)
 
         self.chat = QTextBrowser()
         self.chat.setOpenExternalLinks(True)
-        self.chat.setMinimumHeight(300)
-        layout.addWidget(self.chat, 1)
+        self.chat.setMinimumHeight(360)
+        self.chat.setStyleSheet(
+            """
+            QTextBrowser {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 rgba(10, 16, 29, 0.9),
+                    stop:1 rgba(7, 13, 21, 0.86));
+                border: 1px solid rgba(118, 170, 255, 0.2);
+                border-radius: 18px;
+                padding: 16px;
+                color: #edfaff;
+            }
+            """
+        )
+        self.root_layout.addWidget(self.chat, 1)
 
-        examples = QHBoxLayout()
+        quick = QHBoxLayout()
         for prompt in (
             "Ouvre un nouvel onglet Chrome",
             "Cherche sur Google les actualités tech",
             "Mets Daft Punk sur Spotify",
         ):
             button = QPushButton(prompt)
-            button.clicked.connect(lambda _checked=False, text=prompt: self.send_requested.emit(text))
-            examples.addWidget(button)
-        layout.addLayout(examples)
+            button.clicked.connect(
+                lambda _checked=False, text=prompt: self.send_requested.emit(text)
+            )
+            button.setMinimumHeight(42)
+            quick.addWidget(button)
+        self.root_layout.addLayout(quick)
 
         composer = QHBoxLayout()
         self.input = QLineEdit()
         self.input.setPlaceholderText("Écris à Boogie…")
         self.input.returnPressed.connect(self._send_text)
         composer.addWidget(self.input, 1)
-        self.mic_button = QPushButton("🎙  Démarrage…")
-        self.mic_button.setMinimumWidth(170)
+
+        self.mic_button = QPushButton("🎙  Toujours à l’écoute")
+        self.mic_button.setMinimumWidth(220)
         self.mic_button.setDisabled(True)
         composer.addWidget(self.mic_button)
+
         self.send_button = QPushButton("Envoyer")
-        self.send_button.setMinimumWidth(96)
+        self.send_button.setMinimumWidth(110)
         self.send_button.clicked.connect(self._send_text)
         composer.addWidget(self.send_button)
-        layout.addLayout(composer)
+        self.root_layout.addLayout(composer)
 
         footer = QLabel(
-            "Voix et modèle IA locaux · Les recherches Web nécessitent Internet"
+            "Voix locale • IA locale • Contrôle Windows • Requêtes web" 
         )
         footer.setAlignment(Qt.AlignCenter)
-        footer.setStyleSheet("color: #7494aa; font-size: 10px;")
-        layout.addWidget(footer)
+        footer.setStyleSheet(
+            "color: #84b3d1; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase;"
+        )
+        self.root_layout.addWidget(footer)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(18, 18, 18, 18)
+        main_layout.addWidget(self.root)
 
     def _send_text(self):
         text = self.input.text().strip()
@@ -185,6 +276,14 @@ class BoogieInterface(QWidget):
             f"color: {color}; background: rgba(2, 19, 37, 210); "
             f"border: 1px solid #176b9b; border-radius: 12px; padding: 8px 13px;"
         )
+
+    def trigger_pulse(self, duration=500):
+        self.pulse.show()
+        self.pulse_animation.stop()
+        self.pulse_animation.setDuration(duration)
+        self.pulse_animation.setStartValue(0.2)
+        self.pulse_animation.setEndValue(1.0)
+        self.pulse_animation.start()
 
     def set_listening(self, listening):
         self.mic_button.setText(

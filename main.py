@@ -79,6 +79,11 @@ class SpeechWorker(QThread):
                         if not phrase:
                             continue
 
+                        phrase = AssistantEngine._clean_recognized_text(phrase)
+                        if not phrase:
+                            recognizer.Reset()
+                            continue
+
                         if awaiting_command:
                             command = extract_wake_command(phrase)
                             if command is None:
@@ -165,9 +170,16 @@ class BoogieApp:
         self.speech_worker.start()
 
     def on_speech_recognized(self, phrase):
+        cleaned = phrase.strip()
+        if self.assistant_busy and cleaned.casefold() in {"stop", "boogie stop"}:
+            self.window.trigger_pulse(220)
+            self.stop_current_response()
+            return
+        self.window.trigger_pulse(350)
         self.handle_prompt(phrase, from_voice=True)
 
     def on_wake_detected(self):
+        self.window.trigger_pulse(420)
         self.enqueue_request("", acknowledge=True)
 
     def on_speech_failed(self, message):
@@ -233,6 +245,11 @@ class BoogieApp:
         self.assistant_busy = False
         self.window.set_busy(False)
         self._start_next_request()
+
+    def stop_current_response(self):
+        if self.engine is not None:
+            self.engine.request_stop()
+        self.window.set_status("Arrêt de la réponse…")
 
     def stop_workers(self):
         if self.speech_worker and self.speech_worker.isRunning():
