@@ -2,10 +2,14 @@
   "ollama_url": "http://127.0.0.1:11434",
   "ollama_model": "llama3.2",
   "web_search_url": "https://www.bing.com/search?format=rss&mkt=fr-FR&q={query}",
-  "voice_rate": 180,
+  "voice_rate": 220,
   "voice_volume": 1.0,
   "neural_voice": "fr-FR-DeniseNeural",
-  "neural_rate": "+12%",
-  "neural_pitch": "+2Hz",
-  "neural_volume": "+12%"
+  "neural_rate": "+25%",
+  "neural_pitch": "+35Hz",
+  "neural_volume": "+12%",
+  "label": "Aiguë · comique",
+  "voice_gender": "female",
+  "voice_name": "",
+  "voice_profile": "high_comic"
 }

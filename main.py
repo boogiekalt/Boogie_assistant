@@ -5,6 +5,7 @@ from collections import deque
 from pathlib import Path
 
 from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication
 
 from commands import AssistantEngine
@@ -143,8 +144,11 @@ class BoogieApp:
     def __init__(self):
         self.app = QApplication(sys.argv)
         self.app.aboutToQuit.connect(self.stop_workers)
-        self.window = BoogieInterface()
         self.engine = AssistantEngine(Path(__file__).resolve().parent)
+        self.window = BoogieInterface(self.engine.voice_profile)
+        icon_path = Path(__file__).resolve().parent / "assets" / "logo.png"
+        if icon_path.is_file():
+            self.app.setWindowIcon(QIcon(str(icon_path)))
         self.speech_worker = None
         self.assistant_worker = None
         self.pending_requests = deque()
@@ -152,6 +156,7 @@ class BoogieApp:
         self.speech_available = False
 
         self.window.send_requested.connect(self.handle_prompt)
+        self.window.voice_changed.connect(self.on_voice_changed)
         self.window.set_listening(True)
         self.window.set_status("Démarrage de l’écoute locale…")
         self.window.add_message(
@@ -168,6 +173,22 @@ class BoogieApp:
         self.speech_worker.status_changed.connect(self.on_speech_status)
         self.speech_worker.failed.connect(self.on_speech_failed)
         self.speech_worker.start()
+
+    def on_voice_changed(self, profile):
+        try:
+            self.engine.set_voice_profile(profile)
+        except (OSError, ValueError) as exc:
+            self.window.add_message(
+                "assistant",
+                f"Le profil vocal n’a pas pu être enregistré : {exc}",
+            )
+            self.window.voice_combo.blockSignals(True)
+            self.window.voice_combo.setCurrentIndex(
+                self.window.voice_combo.findData(self.engine.voice_profile)
+            )
+            self.window.voice_combo.blockSignals(False)
+            return
+        self.window.set_status("Profil vocal enregistré")
 
     def on_speech_recognized(self, phrase):
         cleaned = phrase.strip()

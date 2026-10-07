@@ -12,19 +12,23 @@ Depuis le dossier du projet, installe les dépendances puis lance `main.py` :
 .\venv\Scripts\python.exe main.py
 ```
 
+`window.py` lance la même application complète. L'interface rouge de type HUD
+affiche le cœur animé, le journal de la session, l'état du processeur, de la RAM,
+du réseau local et de la batterie lorsqu'elle est détectée. L'icône de fenêtre
+et de barre des tâches utilise `assets/logo.png`.
+
 Le dossier `models/vosk_fr` contient le modèle de reconnaissance vocale local.
 Le micro s'active automatiquement au démarrage et reste à l'écoute du wake word
 **« Boogie »** tant que l'application est ouverte. Dis « Boogie », puis ta
 demande ; si tu prononces seulement le wake word, Boogie attend ta demande
 pendant 10 secondes. Tu peux aussi lui écrire directement.
 
-Boogie utilise par défaut la voix neuronale française Microsoft `fr-FR-DeniseNeural`
-pour une diction plus naturelle. Cela nécessite Internet : le texte de chaque
-réponse vocale est transmis au service Microsoft Edge TTS pour générer l'audio.
-Si ce service ou la connexion échoue, Boogie bascule sur la voix féminine locale
-de Windows (Microsoft Hortense sur ce PC). La voix, le débit et la hauteur sont
-réglables via `neural_voice`, `neural_rate` et `neural_pitch` dans
-`boogie_config.json`.
+Le profil vocal se choisit dans le panneau de droite : voix féminine ou masculine
+naturelle, voix aiguë comique ou voix grave robotique. Les profils sont enregistrés
+dans `boogie_config.json`. Les voix et effets Edge TTS nécessitent Internet ; en
+cas d'indisponibilité, Boogie utilise la voix Windows installée correspondant au
+genre choisi. Les effets de hauteur ne sont alors pas disponibles. Les profils
+comiques sont des effets stylisés et ne reproduisent pas la voix d'un personnage.
 
 ## Réponses IA locales
 

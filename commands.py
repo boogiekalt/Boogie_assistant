@@ -1,12 +1,14 @@
 import json
 import asyncio
 import ctypes
+import difflib
 import os
 import re
 import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import unicodedata
 import asyncio
 import ctypes
@@ -21,9 +23,143 @@ from datetime import date, timedelta
 from pathlib import Path
 
 
+VOICE_PROFILES = {
+    "female_natural": {
+        "label": "Féminine · naturelle",
+        "neural_voice": "fr-FR-DeniseNeural",
+        "neural_rate": "+8%",
+        "neural_pitch": "+0Hz",
+        "voice_gender": "female",
+        "voice_rate": 180,
+    },
+    "male_natural": {
+        "label": "Masculine · naturelle",
+        "neural_voice": "fr-FR-HenriNeural",
+        "neural_rate": "+8%",
+        "neural_pitch": "+0Hz",
+        "voice_gender": "male",
+        "voice_rate": 180,
+    },
+    "high_comic": {
+        "label": "Aiguë · comique",
+        "neural_voice": "fr-FR-DeniseNeural",
+        "neural_rate": "+25%",
+        "neural_pitch": "+35Hz",
+        "voice_gender": "female",
+        "voice_rate": 220,
+    },
+    "deep_robotic": {
+        "label": "Grave · robotique",
+        "neural_voice": "fr-FR-HenriNeural",
+        "neural_rate": "-8%",
+        "neural_pitch": "-18Hz",
+        "voice_gender": "male",
+        "voice_rate": 160,
+    },
+}
+
+VOICE_TERM_ALIASES = {
+    "spotifai": "spotify",
+    "spotifaille": "spotify",
+    "spotifi": "spotify",
+    "sportify": "spotify",
+    "robloque": "roblox",
+    "robloxe": "roblox",
+    "robloks": "roblox",
+    "robloc": "roblox",
+    "stime": "steam",
+    "steem": "steam",
+    "mine craft": "minecraft",
+    "minekraft": "minecraft",
+    "fort night": "fortnite",
+    "tayleur swift": "taylor swift",
+    "tayleur swifte": "taylor swift",
+    "tailor swift": "taylor swift",
+    "tailleur swift": "taylor swift",
+    "taylor swifte": "taylor swift",
+    "taylors swift": "taylor swift",
+    "the week end": "the weeknd",
+    "week end": "weeknd",
+    "bee yonce": "beyonce",
+    "beyonsay": "beyonce",
+    "ariana grandeh": "ariana grande",
+    "billie eilishh": "billie eilish",
+    "dua leepa": "dua lipa",
+    "justin bieberr": "justin bieber",
+    "rihanna": "rihanna",
+    "rihannaah": "rihanna",
+    "bruno marss": "bruno mars",
+    "lady gagga": "lady gaga",
+    "michael jacksonn": "michael jackson",
+    "selena gomezz": "selena gomez",
+    "shak ira": "shakira",
+    "ed sheerann": "ed sheeran",
+    "bad bounny": "bad bunny",
+}
+KNOWN_VOICE_TERMS = (
+    "spotify",
+    "roblox",
+    "steam",
+    "minecraft",
+    "fortnite",
+    "valorant",
+    "league",
+    "legends",
+    "call",
+    "duty",
+    "taylor",
+    "swift",
+    "weeknd",
+    "beyonce",
+    "ariana",
+    "grande",
+    "billie",
+    "eilish",
+    "dua",
+    "lipa",
+    "justin",
+    "bieber",
+    "rihanna",
+    "drake",
+    "bruno",
+    "mars",
+    "lady",
+    "gaga",
+    "michael",
+    "jackson",
+    "selena",
+    "gomez",
+    "shakira",
+    "eminem",
+)
+
+
 def _normalize(text):
     decomposed = unicodedata.normalize("NFKD", text.casefold())
     return "".join(char for char in decomposed if not unicodedata.combining(char))
+
+
+def _correct_known_terms(text):
+    for misheard, corrected in VOICE_TERM_ALIASES.items():
+        text = re.sub(
+            rf"\b{re.escape(misheard)}\b",
+            corrected,
+            text,
+        )
+
+    words = text.split()
+    for index, word in enumerate(words):
+        if len(word) < 4:
+            continue
+        closest = difflib.get_close_matches(
+            word,
+            KNOWN_VOICE_TERMS,
+            n=1,
+            cutoff=0.82,
+        )
+        if closest and abs(len(word) - len(closest[0])) <= 2:
+            words[index] = closest[0]
+    return " ".join(words)
 
 
 def _clean_recognized_text(text):
@@ -33,6 +169,7 @@ def _clean_recognized_text(text):
     cleaned = re.sub(r"https?://\S+", " ", cleaned)
     cleaned = re.sub(r"[^a-z0-9\s'-]", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    cleaned = _correct_known_terms(cleaned)
 
     for wrong, right in {
         "cuisine": "squeezie",
@@ -99,8 +236,38 @@ class AssistantEngine:
             raise ValueError("boogie_config.json doit contenir un objet JSON.")
         return config
 
+    @property
+    def voice_profile(self):
+        configured_profile = self.config.get("voice_profile")
+        if isinstance(configured_profile, str) and configured_profile in VOICE_PROFILES:
+            return configured_profile
+        configured_voice = self.config.get("neural_voice", "fr-FR-DeniseNeural")
+        return (
+            "male_natural"
+            if configured_voice == VOICE_PROFILES["male_natural"]["neural_voice"]
+            else "female_natural"
+        )
+
+    def set_voice_profile(self, profile):
+        if not isinstance(profile, str) or profile not in VOICE_PROFILES:
+            raise ValueError(f"Profil vocal inconnu : {profile}")
+
+        updated_config = {
+            **self.config,
+            **VOICE_PROFILES[profile],
+            "voice_name": "",
+            "voice_profile": profile,
+        }
+        config_path = self.project_dir / "boogie_config.json"
+        config_path.write_text(
+            json.dumps(updated_config, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        self.config = updated_config
+
     def process(self, prompt, status_callback=None):
-        normalized = _normalize(prompt)
+        prompt = _correct_known_terms(_normalize(prompt))
+        normalized = prompt
 
         if self._pending_weather_prompt is not None:
             location = self._extract_weather_location(prompt)
@@ -124,13 +291,7 @@ class AssistantEngine:
             hour, minute = current_time.split(":")
             return f"Il est {hour} h {minute}."
 
-        spotify_action = (
-            "spotify" in normalized
-            and normalized.startswith(
-                ("mets ", "lance ", "joue ", "ecoute ", "ouvre ", "cherche ")
-            )
-        )
-        if spotify_action:
+        if self._is_spotify_request(normalized):
             return self._open_spotify(prompt)
         if self._is_youtube_request(normalized):
             return self._open_youtube(prompt)
@@ -158,6 +319,15 @@ class AssistantEngine:
     @staticmethod
     def _clean_recognized_text(text):
         return _clean_recognized_text(text)
+
+    @staticmethod
+    def _is_spotify_request(normalized):
+        has_spotify = re.search(r"\bspotify\b", normalized)
+        has_play_intent = re.search(
+            r"\b(?:mets?|lance|joue|cherche|ecoute|ouvre|demarre)\b",
+            normalized,
+        )
+        return bool(has_spotify and has_play_intent)
 
     @staticmethod
     def _is_time_question(normalized):
@@ -434,9 +604,33 @@ class AssistantEngine:
         return f"J’ai ouvert YouTube pour chercher « {cleaned} » dans les résultats de recherche."
 
     def _open_spotify(self, prompt):
-        normalized = _normalize(prompt)
-        match = re.search(r"(?:mets|lance|joue|cherche)\s+(.+?)\s+(?:sur\s+)?spotify", normalized)
-        query = match.group(1).strip() if match else ""
+        normalized = _correct_known_terms(_normalize(prompt))
+        match = re.search(
+            r"\b(?:mets?|lance|joue|cherche|ecoute|ouvre|demarre)\b"
+            r"\s+(?:moi\s+)?(.+?)"
+            r"(?:\s+(?:sur|dans|avec)\s+spotify|\s+spotify\b)",
+            normalized,
+        )
+        if match:
+            query = match.group(1).strip()
+        else:
+            reversed_match = re.search(
+                r"\bspotify\b[\s,;:.-]*(?:mets?|lance|joue|cherche|ecoute)"
+                r"\s+(?:moi\s+)?(.+)$",
+                normalized,
+            )
+            query = reversed_match.group(1).strip() if reversed_match else ""
+        query = re.sub(
+            r"^(?:(?:de\s+la\s+)?musique(?:\s+de)?|du\s+son(?:\s+de)?|"
+            r"le\s+titre\s+de|la\s+chanson\s+de)\s+",
+            "",
+            query,
+        ).strip()
+        query = re.sub(
+            r"\s+(?:s il te plait|s il vous plait|stp|svp)$",
+            "",
+            query,
+        ).strip()
         if query:
             url = "https://open.spotify.com/search/" + urllib.parse.quote(query)
             description = f"la recherche Spotify pour « {query} »"
@@ -502,21 +696,38 @@ class AssistantEngine:
             ):
                 results.append(result)
         if topic_terms:
-            results.sort(
-                key=lambda result: (
-                    2 * len(topic_terms & set(re.findall(r"\w+", _normalize(result["title"]))))
-                    + len(topic_terms & set(re.findall(r"\w+", _normalize(result["snippet"])))),
-                    len(result.get("snippet", "")),
-                ),
-                reverse=True,
-            )
+            ranked_results = []
+            for result in results:
+                title_terms = set(
+                    re.findall(r"\w+", _normalize(result["title"]))
+                )
+                snippet_terms = set(
+                    re.findall(r"\w+", _normalize(result.get("snippet", "")))
+                )
+                matching_terms = topic_terms & (title_terms | snippet_terms)
+                if not matching_terms:
+                    continue
+                score = (
+                    3 * len(topic_terms & title_terms)
+                    + len(topic_terms & snippet_terms)
+                )
+                ranked_results.append(
+                    (
+                        score,
+                        len(result.get("snippet", "")),
+                        result,
+                    )
+                )
+            ranked_results.sort(key=lambda item: (item[0], item[1]), reverse=True)
+            results = [item[2] for item in ranked_results]
         return results[:5]
 
     @staticmethod
     def _clean_search_query(query):
         cleaned = _normalize(query).strip()
         cleaned = re.sub(
-            r"^(?:dis moi|donne moi|indique moi|explique moi|"
+            r"^(?:dis moi|donne moi|indique moi|explique moi|parle moi de|"
+            r"parle moi|parle de|raconte moi|"
             r"quelle est|quel est|quels sont|quelles sont|"
             r"qui est|qui sont|qu est ce que|c est quoi)\s+",
             "",
@@ -539,7 +750,7 @@ class AssistantEngine:
             "que", "quoi", "est", "sont", "etre", "avoir", "fait",
             "comment", "pourquoi", "quand", "quel", "quelle", "quels",
             "quelles", "donne", "dis", "moi", "mon", "ma", "mes",
-            "sera", "demain", "aujourd", "hui",
+            "sera", "demain", "aujourd", "hui", "parle", "raconte",
         }
         return {
             term
@@ -736,8 +947,14 @@ class AssistantEngine:
         get_error.restype = ctypes.c_int
         alias = f"boogietts{threading.get_ident()}"
 
-        def send(command):
-            error_code = send_command(command, None, 0, None)
+        def send(command, result_buffer=None):
+            buffer_length = len(result_buffer) if result_buffer is not None else 0
+            error_code = send_command(
+                command,
+                result_buffer,
+                buffer_length,
+                None,
+            )
             if error_code:
                 message = ctypes.create_unicode_buffer(256)
                 get_error(error_code, message, len(message))
@@ -747,18 +964,15 @@ class AssistantEngine:
         try:
             send(f'open "{audio_path}" type mpegvideo alias {alias}')
             opened = True
-
-            def play_audio():
-                send(f"play {alias} wait")
-
-            player = threading.Thread(target=play_audio, daemon=True)
-            player.start()
-            while player.is_alive():
+            send(f"play {alias}")
+            while True:
                 if self._speech_stop_event.is_set():
                     send(f"stop {alias}")
-                    send(f"close {alias}")
-                    opened = False
                     return
+                mode = ctypes.create_unicode_buffer(32)
+                send(f"status {alias} mode", mode)
+                if mode.value.casefold() != "playing":
+                    break
                 time.sleep(0.05)
         finally:
             if opened:
@@ -772,17 +986,18 @@ class AssistantEngine:
             speaker.setProperty("rate", self.config.get("voice_rate", 180))
             speaker.setProperty("volume", self.config.get("voice_volume", 1.0))
             voices = speaker.getProperty("voices")
-            female_voices = [
+            preferred_gender = self.config.get("voice_gender", "female").casefold()
+            preferred_voices = [
                 voice
                 for voice in voices
-                if str(getattr(voice, "gender", "")).casefold() == "female"
+                if str(getattr(voice, "gender", "")).casefold() == preferred_gender
             ]
             configured_name = self.config.get("voice_name", "").strip()
             if configured_name:
                 selected_voice = next(
                     (
                         voice
-                        for voice in female_voices
+                        for voice in preferred_voices
                         if _normalize(configured_name)
                         in _normalize(f"{voice.id} {voice.name}")
                     ),
@@ -790,31 +1005,36 @@ class AssistantEngine:
                 )
                 if selected_voice is None:
                     raise RuntimeError(
-                        f"La voix féminine configurée « {configured_name} » "
+                        f"La voix configurée « {configured_name} » "
                         "n’est pas installée."
                     )
             else:
                 selected_voice = next(
                     (
                         voice
-                        for voice in female_voices
+                        for voice in preferred_voices
                         if "fr" in _normalize(
                             " ".join(str(language) for language in voice.languages)
                         )
                     ),
                     None,
                 )
-                if selected_voice is None and female_voices:
-                    selected_voice = female_voices[0]
+                if selected_voice is None and preferred_voices:
+                    selected_voice = preferred_voices[0]
             if selected_voice is None:
                 raise RuntimeError(
-                    "Aucune voix féminine n’est installée dans Windows."
+                    f"Aucune voix {preferred_gender} n’est installée dans Windows."
                 )
             speaker.setProperty("voice", selected_voice.id)
             speaker.say(text)
 
+            speech_errors = []
+
             def run_speech():
-                speaker.runAndWait()
+                try:
+                    speaker.runAndWait()
+                except Exception as exc:
+                    speech_errors.append(exc)
 
             worker = threading.Thread(target=run_speech, daemon=True)
             worker.start()
@@ -823,5 +1043,9 @@ class AssistantEngine:
                     speaker.stop()
                     return
                 time.sleep(0.05)
+            if speech_errors:
+                raise RuntimeError(
+                    f"La lecture de la voix Windows a échoué : {speech_errors[0]}"
+                ) from speech_errors[0]
         finally:
             speaker.stop()

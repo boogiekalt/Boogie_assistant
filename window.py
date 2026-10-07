@@ -1,12 +1,9 @@
 import sys
-from PyQt5.QtWidgets import QApplication
-from interface import BoogieInterface
+from main import BoogieApp
+
 
 def launch_ui():
-    app = QApplication(sys.argv)
-    ui = BoogieInterface()
-    ui.show()
-    sys.exit(app.exec_())
+    sys.exit(BoogieApp().run())
 
 if __name__ == "__main__":
     launch_ui()
