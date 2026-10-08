@@ -13,10 +13,31 @@ from interface import BoogieInterface
 
 
 def extract_wake_command(phrase):
-    match = re.search(r"\b(?:boogie|bougui|bougie)\b", phrase, re.IGNORECASE)
-    if not match:
+    normalized = (phrase or "").strip()
+    if not normalized:
         return None
-    return phrase[match.end():].strip(" ,.!?;:")
+
+    wake_patterns = [
+        r"boogie",
+        r"bougui",
+        r"bougie",
+        r"j\s*o\s*j\s*o",
+        r"d\s*j\s*o\s*d\s*j\s*o",
+        r"d\s*j\s*o\s*\s*d\s*j\s*o",
+        r"j\s*o\s*d\s*j\s*o",
+        r"g\s*o\s*a\s*t",
+    ]
+    for pattern in wake_patterns:
+        match = re.search(rf"^(?:{pattern})(?:\s+(.*)|\s*$)", normalized, re.IGNORECASE)
+        if match:
+            return (match.group(1) or "").strip(" ,.!?;:")
+
+    for pattern in wake_patterns:
+        match = re.search(rf"(?:^|\s)(?:{pattern})(?:\s+(.*)|\s*$)", normalized, re.IGNORECASE)
+        if match:
+            return (match.group(1) or "").strip(" ,.!?;:")
+
+    return None
 
 
 class SpeechWorker(QThread):
@@ -30,9 +51,54 @@ class SpeechWorker(QThread):
         self.model_path = model_path
         self.command_timeout = command_timeout
         self._stop_requested = False
+        self._whisper_model = None
+        self._command_buffer = bytearray()
 
     def stop(self):
         self._stop_requested = True
+
+    def _load_whisper(self):
+        if self._whisper_model is not None:
+            return self._whisper_model
+
+        try:
+            import whisper
+
+            self._whisper_model = whisper.load_model("small", device="cpu")
+            self.status_changed.emit("Transcription Whisper prête — meilleure compréhension")
+            return self._whisper_model
+        except Exception as exc:
+            self._whisper_model = False
+            self.status_changed.emit(f"Whisper indisponible : {exc}")
+            return None
+
+    def _transcribe_command_with_whisper(self):
+        if not self._command_buffer:
+            return None
+
+        model = self._load_whisper()
+        if model is None:
+            return None
+
+        try:
+            import numpy as np
+
+            audio = np.frombuffer(bytes(self._command_buffer), dtype=np.int16).astype(np.float32)
+            audio = audio / 32768.0
+            result = model.transcribe(audio, fp16=False, language="fr")
+            text = result.get("text", "").strip() if isinstance(result, dict) else ""
+            if not text:
+                segments = result.get("segments", []) if isinstance(result, dict) else []
+                text = " ".join(
+                    segment.get("text", "")
+                    for segment in segments
+                    if isinstance(segment, dict)
+                ).strip()
+            cleaned = AssistantEngine._clean_recognized_text(text)
+            return cleaned or None
+        except Exception as exc:
+            self.status_changed.emit(f"Whisper a échoué : {exc}")
+            return None
 
     def run(self):
         import json
@@ -58,7 +124,7 @@ class SpeechWorker(QThread):
             self.status_changed.emit("Chargement du modèle vocal local…")
             model = Model(str(self.model_path))
             recognizer = KaldiRecognizer(model, 16000)
-            self.status_changed.emit("Wake word actif — dis « Boogie »")
+            self.status_changed.emit("Wake word actif — dis « Jojo » ou « Goat »")
             awaiting_command = False
             command_deadline = 0.0
 
@@ -75,6 +141,9 @@ class SpeechWorker(QThread):
                     except queue.Empty:
                         continue
 
+                    if awaiting_command:
+                        self._command_buffer.extend(audio)
+
                     if recognizer.AcceptWaveform(audio):
                         phrase = json.loads(recognizer.Result()).get("text", "").strip()
                         if not phrase:
@@ -86,11 +155,11 @@ class SpeechWorker(QThread):
                             continue
 
                         if awaiting_command:
-                            command = extract_wake_command(phrase)
-                            if command is None:
-                                command = phrase
+                            whisper_text = self._transcribe_command_with_whisper()
+                            final_command = whisper_text or phrase
+                            self._command_buffer.clear()
                             awaiting_command = False
-                            self.recognized.emit(command)
+                            self.recognized.emit(final_command)
                             recognizer.Reset()
                             continue
 
@@ -103,14 +172,20 @@ class SpeechWorker(QThread):
                             self.recognized.emit(command)
                         else:
                             awaiting_command = True
+                            self._command_buffer.clear()
                             command_deadline = time.monotonic() + self.command_timeout
                             self.wake_detected.emit()
                             self.status_changed.emit("Je t’écoute…")
                         recognizer.Reset()
                     if awaiting_command and time.monotonic() >= command_deadline:
+                        whisper_text = self._transcribe_command_with_whisper()
+                        final_command = whisper_text or ""
+                        self._command_buffer.clear()
                         awaiting_command = False
-                        self.status_changed.emit("Wake word actif — dis « Boogie »")
+                        self.status_changed.emit("Wake word actif — dis « Jojo » ou « Goat »")
                         recognizer.Reset()
+                        if final_command:
+                            self.recognized.emit(final_command)
         except Exception as exc:
             self.failed.emit(f"Écoute indisponible : {exc}")
 
@@ -120,28 +195,42 @@ class AssistantWorker(QThread):
     completed = pyqtSignal(str, str)
     failed = pyqtSignal(str)
 
-    def __init__(self, engine, prompt="", acknowledge=False):
+    def __init__(self, engine, prompt="", acknowledge=False, mode="assistant", voice_enabled=True):
         super().__init__()
         self.engine = engine
         self.prompt = prompt
         self.acknowledge = acknowledge
+        self.mode = mode
+        self.voice_enabled = voice_enabled
 
     def run(self):
         try:
             if self.acknowledge:
-                warning = self.engine.speak("Oui, je t’écoute.")
-                self.completed.emit("", warning)
+                if self.voice_enabled:
+                    warning = self.engine.speak("Oui, je t’écoute.")
+                    self.completed.emit("", warning)
+                else:
+                    self.completed.emit("", "")
                 return
-            answer = self.engine.process(self.prompt, self.status_changed.emit)
+            answer = self.engine.process(
+                self.prompt,
+                self.status_changed.emit,
+                mode=self.mode,
+            )
             self.status_changed.emit("Je te réponds…")
-            speech_warning = self.engine.speak(answer)
-            self.completed.emit(answer, speech_warning)
+            self.completed.emit(answer, "")
+            if self.voice_enabled:
+                speech_warning = self.engine.speak(answer)
+                if speech_warning:
+                    self.completed.emit("", speech_warning)
         except Exception as exc:
             self.failed.emit(f"Je n’ai pas pu traiter ta demande : {exc}")
 
 
 class BoogieApp:
     def __init__(self):
+        self.mode = "conversation"
+        self.voice_enabled = True
         self.app = QApplication(sys.argv)
         self.app.aboutToQuit.connect(self.stop_workers)
         self.engine = AssistantEngine(Path(__file__).resolve().parent)
@@ -157,13 +246,17 @@ class BoogieApp:
 
         self.window.send_requested.connect(self.handle_prompt)
         self.window.voice_changed.connect(self.on_voice_changed)
+        self.window.mode_changed.connect(self.set_mode)
+        self.window.voice_toggled.connect(self.set_voice_enabled)
         self.window.set_listening(True)
+        self.window.set_mode(self.mode)
+        self.window.set_voice_enabled(self.voice_enabled)
         self.window.set_status("Démarrage de l’écoute locale…")
         self.window.add_message(
             "assistant",
             "Salut, moi c’est Boogie (Bougui). Mon micro reste actif tant que "
-            "l’application est ouverte. Dis « Boogie », puis ta demande. Tu peux "
-            "aussi m’écrire ici.",
+            "l’application est ouverte. Dis « Jojo », « Djodjo » ou « Goat », "
+            "puis ta demande. Tu peux aussi m’écrire ici.",
         )
         self.window.show()
         model_path = Path(__file__).resolve().parent / "models" / "vosk_fr"
@@ -173,6 +266,19 @@ class BoogieApp:
         self.speech_worker.status_changed.connect(self.on_speech_status)
         self.speech_worker.failed.connect(self.on_speech_failed)
         self.speech_worker.start()
+
+    def set_mode(self, mode):
+        normalized_mode = "conversation"
+        self.mode = normalized_mode
+        self.window.set_mode(normalized_mode)
+
+    def set_voice_enabled(self, enabled):
+        self.voice_enabled = bool(enabled)
+        self.window.set_voice_enabled(self.voice_enabled)
+        if self.voice_enabled:
+            self.window.set_status("Retour vocal activé")
+        else:
+            self.window.set_status("Retour vocal désactivé")
 
     def on_voice_changed(self, profile):
         try:
@@ -218,8 +324,7 @@ class BoogieApp:
         prompt = prompt.strip()
         if not prompt:
             return
-        if from_voice:
-            self.window.add_message("user", prompt)
+        self.window.add_message("user", prompt)
         self.enqueue_request(prompt)
 
     def enqueue_request(self, prompt, acknowledge=False):
@@ -237,7 +342,11 @@ class BoogieApp:
             self.window.set_busy(True)
             self.window.set_status("Je réfléchis…")
         self.assistant_worker = AssistantWorker(
-            self.engine, prompt, acknowledge=acknowledge
+            self.engine,
+            prompt,
+            acknowledge=acknowledge,
+            mode=self.mode,
+            voice_enabled=self.voice_enabled,
         )
         self.assistant_worker.status_changed.connect(self.window.set_status)
         self.assistant_worker.completed.connect(self.on_answer)
@@ -253,7 +362,7 @@ class BoogieApp:
         self.window.set_busy(False)
         if not self.pending_requests:
             status = (
-                "Wake word actif — dis « Boogie »"
+                "Wake word actif — dis « Jojo » ou « Goat »"
                 if self.speech_available
                 else "Micro indisponible"
             )

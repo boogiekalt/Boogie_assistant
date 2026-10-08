@@ -3,6 +3,7 @@ import asyncio
 import ctypes
 import difflib
 import os
+from collections import deque
 import re
 import shutil
 import subprocess
@@ -225,6 +226,7 @@ class AssistantEngine:
         self.config = self._load_config()
         self._pending_weather_prompt = None
         self._speech_stop_event = threading.Event()
+        self.conversation_history = deque(maxlen=8)
 
     def _load_config(self):
         config_path = self.project_dir / "boogie_config.json"
@@ -265,7 +267,7 @@ class AssistantEngine:
         )
         self.config = updated_config
 
-    def process(self, prompt, status_callback=None):
+    def process(self, prompt, status_callback=None, mode="assistant"):
         prompt = _correct_known_terms(_normalize(prompt))
         normalized = prompt
 
@@ -302,6 +304,18 @@ class AssistantEngine:
         if normalized.startswith(("recherche ", "cherche sur google ", "fais une recherche")):
             return self._google_search(prompt)
 
+        if mode == "conversation" and not self._is_direct_command(normalized):
+            if status_callback is not None:
+                status_callback("Je te réponds en conversation…")
+            try:
+                response = self._ask_local_model(prompt, [])
+                self.conversation_history.append((prompt, response))
+                return response
+            except (OSError, urllib.error.URLError, TimeoutError, ValueError):
+                response = self._fallback_conversation_reply(prompt)
+                self.conversation_history.append((prompt, response))
+                return response
+
         if status_callback is not None:
             status_callback("Je cherche des informations sur le Web…")
         results = self._search_web(prompt)
@@ -319,6 +333,27 @@ class AssistantEngine:
     @staticmethod
     def _clean_recognized_text(text):
         return _clean_recognized_text(text)
+
+    @staticmethod
+    def _is_direct_command(normalized):
+        return any(
+            marker in normalized
+            for marker in (
+                "ouvre ",
+                "cherche ",
+                "recherche ",
+                "google",
+                "chrome",
+                "spotify",
+                "youtube",
+                "meteo",
+                "météo",
+                "temps",
+                "heure",
+                "ferme",
+                "stop",
+            )
+        )
 
     @staticmethod
     def _is_spotify_request(normalized):
@@ -835,6 +870,30 @@ class AssistantEngine:
             + "\n\nCes extraits viennent des sources citées ci-dessus."
         )
 
+    def _fallback_conversation_reply(self, prompt):
+        normalized = _normalize(prompt).casefold()
+        if self.conversation_history:
+            last_user, _ = self.conversation_history[-1]
+            if any(term in normalized for term in ("qu est ce que je viens de te demander", "que je viens de te demander", "ce que je viens de te demander", "qu est ce que j ai dit", "ce que j ai dit")):
+                return f"Tu viens de me demander : « {last_user} » ."
+        if any(term in normalized for term in ("comment ca va", "comment sa va", "comment tu vas", "ca va", "comment allez vous")):
+            return "Ça va, merci de demander. Et toi, comment se passe ta journée ?"
+        if any(term in normalized for term in ("comment je m appelle", "tu sais comment je m appelle", "je m appelle")):
+            return "Je ne peux pas savoir ton nom sans que tu me le dises. Comment tu t'appelles ?"
+        if any(term in normalized for term in ("qui suis je", "qui je suis", "qui est ce que je suis")):
+            return "Tu es l'utilisateur de cet assistant. Et moi, je suis là pour discuter avec toi et t'aider, pas seulement pour gérer ton ordinateur."
+        if any(term in normalized for term in ("bonjour", "salut", "bonsoir")):
+            return "Bonjour ! Ravi de te parler. En quoi puis-je t’aider aujourd’hui ?"
+        if any(term in normalized for term in ("tu peux parler normalement", "parler normalement", "discussion", "comme une vraie ia", "comme un vrai assistant")):
+            return "Oui, on peut parler normalement. Je peux discuter avec toi comme une vraie IA, répondre aux questions, expliquer des idées, et même t’aider quand tu veux."
+        if "merci" in normalized:
+            return "Avec plaisir. Tu veux aller plus loin sur un sujet ?"
+        if "qu est ce que tu peux faire" in normalized or "que peux tu faire" in normalized:
+            return "Je peux discuter avec toi, répondre à des questions, t’expliquer des sujets, et aussi t’aider à gérer ton ordinateur ou à faire des recherches quand besoin."
+        if any(term in normalized for term in ("blague", "joke", "raconte", "dis quelque chose")):
+            return "Pourquoi les développeurs aiment-ils les chats ? Parce qu’ils adorent le code source et les souris."
+        return "Oui, bien sûr. On peut parler comme à un vrai chat : pose-moi une question, parle-moi d’un sujet, et je te répondrai naturellement."
+
     def _ask_local_model(self, prompt, results):
         endpoint = self.config.get("ollama_url", "http://127.0.0.1:11434")
         model = self.config.get("ollama_model", "llama3.2")
@@ -843,6 +902,13 @@ class AssistantEngine:
             for item in results
         )
         context = sources or "Aucune source Web n’a été trouvée."
+        recent_history = []
+        if self.conversation_history:
+            recent_history = [
+                f"Utilisateur : {user}\nAssistant : {answer}"
+                for user, answer in list(self.conversation_history)[-4:]
+            ]
+        recent_history_text = "\n\n".join(recent_history) if recent_history else "Aucun historique récent."
         payload = json.dumps(
             {
                 "model": model,
@@ -852,15 +918,19 @@ class AssistantEngine:
                         "role": "system",
                         "content": (
                             "Tu es Boogie, assistant francophone. Réponds en français, "
-                            "de façon claire, structurée et concise. Pour toute info "
-                            "factuelle récente, base-toi sur le contexte Web fourni et "
-                            "cite les URLs pertinentes. N’invente pas de sources. "
-                            "Si les sources ne suffisent pas, dis-le."
+                            "de façon claire, structurée et concise. Tu peux discuter "
+                            "naturellement comme une vraie IA. Gardez la mémoire des "
+                            "échanges récents. Pour toute info factuelle récente, base-toi "
+                            "sur le contexte Web fourni et cite les URLs pertinentes. "
+                            "N’invente pas de sources. Si les sources ne suffisent pas, "
+                            "dis-le."
                         ),
                     },
                     {
                         "role": "user",
-                        "content": f"Question : {prompt}\n\nContexte Web :\n{context}",
+                        "content": (
+                            f"Question : {prompt}\n\nHistorique récent :\n{recent_history_text}\n\nContexte Web :\n{context}"
+                        ),
                     },
                 ],
             }

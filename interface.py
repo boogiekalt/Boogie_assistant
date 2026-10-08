@@ -152,9 +152,12 @@ class PulseCore(QWidget):
 class BoogieInterface(QWidget):
     send_requested = pyqtSignal(str)
     voice_changed = pyqtSignal(str)
+    mode_changed = pyqtSignal(str)
+    voice_toggled = pyqtSignal(bool)
 
     def __init__(self, voice_profile="female_natural"):
         super().__init__()
+        self.voice_enabled = True
         self.setWindowTitle("BOOGIE  //  INTERFACE DE CONTRÔLE")
         self.resize(1500, 900)
         self.setMinimumSize(1120, 720)
@@ -357,6 +360,15 @@ class BoogieInterface(QWidget):
         self.mic_button.setMinimumWidth(175)
         self.mic_button.setDisabled(True)
         composer.addWidget(self.mic_button)
+        self.mode_button = QPushButton("MODE · CONVERSATION")
+        self.mode_button.setMinimumWidth(150)
+        self.mode_button.setEnabled(False)
+        self.mode_button.setVisible(False)
+        composer.addWidget(self.mode_button)
+        self.voice_button = QPushButton("VOIX · ACTIVÉE")
+        self.voice_button.setMinimumWidth(165)
+        self.voice_button.clicked.connect(self._toggle_voice)
+        composer.addWidget(self.voice_button)
         self.send_button = QPushButton("ENVOYER")
         self.send_button.clicked.connect(self._send_text)
         composer.addWidget(self.send_button)
@@ -488,6 +500,31 @@ class BoogieInterface(QWidget):
                 )
                 self.metric_bars["battery"].setValue(battery_percent)
         self.clock.setText(datetime.now().strftime("%H:%M:%S"))
+
+    def _toggle_mode(self):
+        next_mode = "conversation"
+        self.set_mode(next_mode)
+        self.mode_changed.emit(next_mode)
+
+    def set_mode(self, mode):
+        normalized_mode = "conversation"
+        label = "MODE · CONVERSATION"
+        self.mode_button.setText(label)
+        self.mode_button.setStyleSheet("color:#7fe7ff;")
+        self.mode_button.setEnabled(False)
+        self.mode_button.setVisible(False)
+
+    def _toggle_voice(self):
+        self.set_voice_enabled(not self.voice_enabled)
+        self.voice_toggled.emit(self.voice_enabled)
+
+    def set_voice_enabled(self, enabled):
+        self.voice_enabled = bool(enabled)
+        label = "VOIX · ACTIVÉE" if self.voice_enabled else "VOIX · DÉSACTIVÉE"
+        self.voice_button.setText(label)
+        self.voice_button.setStyleSheet(
+            "color:#9fe7ff;" if self.voice_enabled else "color:#f5c1c8;"
+        )
 
     def _voice_selection_changed(self, _index):
         profile = self.voice_combo.currentData()
