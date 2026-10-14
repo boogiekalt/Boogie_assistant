@@ -224,9 +224,47 @@ class AssistantEngine:
     def __init__(self, project_dir):
         self.project_dir = Path(project_dir)
         self.config = self._load_config()
+        self.history_path = self.project_dir / "conversation_history.json"
         self._pending_weather_prompt = None
         self._speech_stop_event = threading.Event()
         self.conversation_history = deque(maxlen=8)
+        self._load_history()
+
+    def _load_history(self):
+        if not self.history_path.exists():
+            return
+        try:
+            payload = json.loads(self.history_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if not isinstance(payload, list):
+            return
+
+        turns = []
+        for item in payload:
+            if isinstance(item, dict):
+                user = item.get("user", "")
+                assistant = item.get("assistant", "")
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                user, assistant = item[0], item[1]
+            else:
+                continue
+            turns.append((str(user), str(assistant)))
+        self.conversation_history = deque(turns[-8:], maxlen=8)
+
+    def save_history(self):
+        payload = [
+            {"user": user, "assistant": assistant}
+            for user, assistant in self.conversation_history
+        ]
+        self.history_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+    def add_history_turn(self, user_prompt, assistant_answer):
+        self.conversation_history.append((str(user_prompt), str(assistant_answer)))
+        self.save_history()
 
     def _load_config(self):
         config_path = self.project_dir / "boogie_config.json"
@@ -305,15 +343,19 @@ class AssistantEngine:
             return self._google_search(prompt)
 
         if mode == "conversation" and not self._is_direct_command(normalized):
+            if self._is_simple_conversation_prompt(normalized):
+                response = self._fallback_conversation_reply(prompt)
+                self.add_history_turn(prompt, response)
+                return response
             if status_callback is not None:
                 status_callback("Je te réponds en conversation…")
             try:
                 response = self._ask_local_model(prompt, [])
-                self.conversation_history.append((prompt, response))
+                self.add_history_turn(prompt, response)
                 return response
             except (OSError, urllib.error.URLError, TimeoutError, ValueError):
                 response = self._fallback_conversation_reply(prompt)
-                self.conversation_history.append((prompt, response))
+                self.add_history_turn(prompt, response)
                 return response
 
         if status_callback is not None:
@@ -354,6 +396,27 @@ class AssistantEngine:
                 "stop",
             )
         )
+
+    @staticmethod
+    def _is_simple_conversation_prompt(normalized):
+        short_patterns = (
+            "merci",
+            "comment tu vas",
+            "qui suis je",
+            "qui je suis",
+            "je m appelle",
+            "tu peux parler normalement",
+            "parler normalement",
+            "qu est ce que tu peux faire",
+            "que peux tu faire",
+            "blague",
+            "raconte",
+            "dis quelque chose",
+            "comment je m appelle",
+            "tu sais comment je m appelle",
+            "tu peux discuter",
+        )
+        return any(pattern in normalized for pattern in short_patterns)
 
     @staticmethod
     def _is_spotify_request(normalized):

@@ -252,6 +252,9 @@ class BoogieApp:
         self.window.set_mode(self.mode)
         self.window.set_voice_enabled(self.voice_enabled)
         self.window.set_status("Démarrage de l’écoute locale…")
+        for user_prompt, assistant_answer in self.engine.conversation_history:
+            self.window.add_message("user", user_prompt)
+            self.window.add_message("assistant", assistant_answer)
         self.window.add_message(
             "assistant",
             "Salut, moi c’est Boogie (Bougui). Mon micro reste actif tant que "

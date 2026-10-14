@@ -140,6 +140,19 @@ class AssistantEngineTest(unittest.TestCase):
         self.assertFalse(search.called)
         local_model.assert_called_once_with("comment ca va", [])
 
+    def test_it_short_circuits_lightweight_chat_without_web_search(self):
+        engine = AssistantEngine(Path(__file__).resolve().parents[1])
+
+        with (
+            patch.object(engine, "_search_web") as search,
+            patch.object(engine, "_ask_local_model", side_effect=AssertionError("should not be called for lightweight chat")) as local_model,
+        ):
+            response = engine.process("tu peux parler normalement ?", mode="conversation")
+
+        self.assertIn("parler", response.casefold())
+        self.assertFalse(search.called)
+        self.assertFalse(local_model.called)
+
     def test_it_falls_back_to_plain_chat_when_local_model_is_unavailable(self):
         engine = AssistantEngine(Path(__file__).resolve().parents[1])
 
@@ -210,6 +223,22 @@ class AssistantEngineTest(unittest.TestCase):
         self.assertEqual("Tu as demandé : comment ça va.", second)
         self.assertEqual(2, len(engine.conversation_history))
         self.assertEqual(2, local_model.call_count)
+
+    def test_it_persists_recent_conversation_history_between_sessions(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            engine = AssistantEngine(Path(temporary_directory))
+            engine.conversation_history = deque([
+                ("bonjour", "Salut !"),
+                ("comment ça va", "Ça va, merci."),
+            ])
+
+            engine.save_history()
+            reloaded = AssistantEngine(Path(temporary_directory))
+
+        self.assertEqual(
+            [("bonjour", "Salut !"), ("comment ça va", "Ça va, merci.")],
+            list(reloaded.conversation_history),
+        )
 
     def test_it_persists_selected_voice_profile(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
