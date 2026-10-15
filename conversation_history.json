@@ -1,0 +1,30 @@
+[
+  {
+    "user": "comment ca va",
+    "assistant": "Ça va, merci de demander. Et toi, comment se passe ta journée ?"
+  },
+  {
+    "user": "bonjour",
+    "assistant": "Salut !"
+  },
+  {
+    "user": "qu est ce que je viens de te demander",
+    "assistant": "Tu as demandé : comment ça va."
+  },
+  {
+    "user": "tu peux parler normalement ?",
+    "assistant": "Oui, on peut parler normalement. Je peux discuter avec toi comme une vraie IA, répondre aux questions, expliquer des idées, et même t’aider quand tu veux."
+  },
+  {
+    "user": "tu peux parler normalement avec moi ?",
+    "assistant": "Oui, on peut parler normalement. Je peux discuter avec toi comme une vraie IA, répondre aux questions, expliquer des idées, et même t’aider quand tu veux."
+  },
+  {
+    "user": "comment ca va",
+    "assistant": "Je vais bien"
+  },
+  {
+    "user": "systeme",
+    "assistant": "En résumé, tu as demandé \"qu'est-ce que je viens de te demander\" après m'avoir parlé. Tu voulais savoir si je pouvais parler normalement avec toi, ce qui est d'abord arrivé lorsque tu m'as demandé comment ça va. Ensuite, tu as répété la question, pour être sûr de m'avoir bien compris. Il n'y a pas de source Web pertinente pour répondre à ta question, mais je suis là pour discuter avec toi et t'aider à la meilleure des manières possibles."
+  }
+]

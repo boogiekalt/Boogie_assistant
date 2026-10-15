@@ -88,6 +88,7 @@ class AssistantEngineTest(unittest.TestCase):
         self.assertEqual("mets la musique", extract_wake_command("j o j o mets la musique"))
         self.assertEqual("mets la musique", extract_wake_command("g o a t mets la musique"))
         self.assertEqual("mets la musique", extract_wake_command("jo jo mets la musique"))
+        self.assertEqual("mets la musique", extract_wake_command("b o o g i e mets la musique"))
 
     def test_it_forces_conversation_mode(self):
         interface = BoogieInterface.__new__(BoogieInterface)

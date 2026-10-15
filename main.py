@@ -13,29 +13,48 @@ from interface import BoogieInterface
 
 
 def extract_wake_command(phrase):
-    normalized = (phrase or "").strip()
+    if phrase is None:
+        return None
+
+    normalized = re.sub(r"[^a-z0-9\s]", " ", str(phrase).lower())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
     if not normalized:
         return None
 
-    wake_patterns = [
-        r"boogie",
-        r"bougui",
-        r"bougie",
+    wake_variants = [
+        "boogie",
+        "bougui",
+        "bougie",
+        "jojo",
+        "djodjo",
+        "djo djo",
+        "jo jo",
+        "jodjo",
+        "goat",
+        "g oat",
+        "g o a t",
+        "j o j o",
+        "d j o d j o",
+        "djo djo",
+    ]
+
+    for variant in wake_variants:
+        pattern = variant.replace(" ", r"\s+")
+        if " " not in variant:
+            pattern = "".join(char + r"\s*" for char in variant).rstrip(r"\s*")
+        match = re.search(rf"(?:^|\s)({pattern})(?:\s+(.*)|\s*$)", normalized, re.IGNORECASE)
+        if match:
+            return (match.group(2) or "").strip(" ,.!?;:")
+
+    wake_letter_patterns = [
         r"j\s*o\s*j\s*o",
         r"d\s*j\s*o\s*d\s*j\s*o",
-        r"d\s*j\s*o\s*\s*d\s*j\s*o",
-        r"j\s*o\s*d\s*j\s*o",
         r"g\s*o\s*a\s*t",
     ]
-    for pattern in wake_patterns:
-        match = re.search(rf"^(?:{pattern})(?:\s+(.*)|\s*$)", normalized, re.IGNORECASE)
+    for pattern in wake_letter_patterns:
+        match = re.search(rf"(?:^|\s)({pattern})(?:\s+(.*)|\s*$)", normalized, re.IGNORECASE)
         if match:
-            return (match.group(1) or "").strip(" ,.!?;:")
-
-    for pattern in wake_patterns:
-        match = re.search(rf"(?:^|\s)(?:{pattern})(?:\s+(.*)|\s*$)", normalized, re.IGNORECASE)
-        if match:
-            return (match.group(1) or "").strip(" ,.!?;:")
+            return (match.group(2) or "").strip(" ,.!?;:")
 
     return None
 
